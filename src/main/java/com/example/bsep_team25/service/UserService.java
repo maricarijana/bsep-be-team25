@@ -4,6 +4,7 @@ package com.example.bsep_team25.service;
 import com.example.bsep_team25.irepository.IUserRepository;
 import com.example.bsep_team25.iservice.IUserService;
 import com.example.bsep_team25.model.User;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.stereotype.Service;
 
@@ -12,11 +13,9 @@ import java.util.Optional;
 
 @Service
 public class UserService implements IUserService {
-    private final IUserRepository userRepository;
 
-    public UserService(IUserRepository userRepository) {
-        this.userRepository = userRepository;
-    }
+    @Autowired
+    private  IUserRepository userRepository;
 
     @Override
     public User save(User user) {

@@ -5,63 +5,78 @@ import com.example.bsep_team25.model.ActivationToken;
 import com.example.bsep_team25.model.Role;
 import com.example.bsep_team25.model.User;
 import com.example.bsep_team25.service.ActivationTokenService;
+import com.example.bsep_team25.service.EmailService;
 import com.example.bsep_team25.service.UserService;
 import com.example.bsep_team25.util.PasswordValidator;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    private final UserService userService;
-    private final ActivationTokenService activationTokenService;
-    public AuthController(UserService userService, ActivationTokenService activationTokenService) {
-        this.userService = userService;
-        this.activationTokenService= activationTokenService;
-    }
+
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private ActivationTokenService activationTokenService;
+
+    @Autowired
+    private EmailService emailService;
 
     @PostMapping("/register")
-    public ResponseEntity<String> register(@RequestBody UserDTO userDto) {
+    public ResponseEntity<?> register(@RequestBody UserDTO userDto) {
 
-        // 1. Password == ConfirmPassword
         if (!userDto.getPassword().equals(userDto.getConfirmPassword())) {
-            return ResponseEntity.badRequest().body("Passwords do not match");
+            return ResponseEntity.badRequest().body(Map.of("message", "Passwords do not match"));
         }
 
-        // 2. Password strength (OWASP minimal)
         if (!PasswordValidator.isValid(userDto.getPassword())) {
-            return ResponseEntity.badRequest().body("Password does not meet OWASP requirements");
+            return ResponseEntity.badRequest().body(Map.of("message", "Password does not meet OWASP requirements"));
         }
-        // 3. Hashuj lozinku
+
+        if (userService.existsByEmail(userDto.getEmail())) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Email already in use"));
+        }
+
         String hashedPassword = new BCryptPasswordEncoder().encode(userDto.getPassword());
 
-        // Napravi novog korisnika
         User user = new User();
         user.setEmail(userDto.getEmail());
         user.setPassword(hashedPassword);
         user.setName(userDto.getName());
         user.setSurName(userDto.getSurname());
         user.setOrganization(userDto.getOrganization());
-        user.setActive(false); // nije aktivan dok ne uvedemo aktivaciju
-        user.setRole(Role.USER); // samo obicni korisnici se registruju
+        user.setActive(false);
+        user.setRole(Role.USER);
 
-        // Sačuvaj u bazi
         userService.save(user);
 
         ActivationToken token = activationTokenService.createToken(user);
-        return ResponseEntity.ok("User registered. Activation token: " + token.getToken());
 
+        // Pošalji mejl sa aktivacionim linkom
+        emailService.sendActivationEmail(user.getEmail(), token.getToken());
+
+        // frontend više ne dobija token, samo poruku
+        return ResponseEntity.ok(Map.of(
+                "message", "User registered successfully. Please check your email to activate your account."
+        ));
     }
+
 
     @GetMapping("/activate/{token}")
-    public ResponseEntity<String> activateAccount(@PathVariable String token) {
+    public ResponseEntity<?> activateAccount(@PathVariable String token) {
         boolean success = activationTokenService.activateUser(token);
         if (success) {
-            return ResponseEntity.ok("Account activated successfully!");
+            return ResponseEntity.ok(Map.of("message", "Account activated successfully!"));
         }
-        return ResponseEntity.badRequest().body("Activation link is invalid or expired");
+        return ResponseEntity.badRequest().body(Map.of("message", "Activation link is invalid or expired"));
     }
+
 
 }

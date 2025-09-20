@@ -3,6 +3,7 @@ package com.example.bsep_team25.service;
 import com.example.bsep_team25.irepository.IActivationTokenRepository;
 import com.example.bsep_team25.model.ActivationToken;
 import com.example.bsep_team25.model.User;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -13,17 +14,15 @@ import java.util.UUID;
 @Service
 public class ActivationTokenService {
 
-    private final IActivationTokenRepository tokenRepository;
-    private final UserService userService;
+    @Autowired
+    private IActivationTokenRepository tokenRepository;
 
-    public ActivationTokenService(IActivationTokenRepository tokenRepository, UserService userService) {
-        this.tokenRepository = tokenRepository;
-        this.userService = userService;
-    }
+    @Autowired
+    private UserService userService;
 
     public ActivationToken createToken(User user) {
         String tokenValue = UUID.randomUUID().toString();
-        LocalDateTime expiry = LocalDateTime.now().plusHours(24); // 24h važenje
+        LocalDateTime expiry = LocalDateTime.now().plusHours(24); // 24h vazenje
 
         ActivationToken token = new ActivationToken(tokenValue, user, expiry);
         return tokenRepository.save(token);
