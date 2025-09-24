@@ -1,11 +1,17 @@
 package com.example.bsep_team25.model;
 
 import jakarta.persistence.*;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
+
+import java.io.Serializable;
+import java.util.Collection;
+import java.util.List;
 
 @Entity
 @Table(name = "users")
-
-public class User {
+public class User implements UserDetails, Serializable {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -15,7 +21,7 @@ public class User {
     private String email;
 
     @Column(nullable = false)
-    private String password; // obavezno čuvati heširan (BCrypt)
+    private String password; // čuva se hash (BCrypt)
 
     @Column(nullable = false)
     private String name;
@@ -33,9 +39,10 @@ public class User {
     @Column(nullable = false)
     private boolean isActive = false;
 
-    public User (){}
+    public User() {}
 
-    public User(Long id, String email, String password, String name, String surname, String organization, Role role, boolean isActive) {
+    public User(Long id, String email, String password, String name, String surname,
+                String organization, Role role, boolean isActive) {
         this.id = id;
         this.email = email;
         this.password = password;
@@ -46,69 +53,66 @@ public class User {
         this.isActive = isActive;
     }
 
-    public String getSurname() {
-        return surname;
+    // Getteri i setteri
+    public String getSurname() { return surname; }
+    public void setSurName(String surName) { this.surname = surName; }
+
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+
+    @Override
+    public String getPassword() { return password; }
+    public void setPassword(String password) { this.password = password; }
+
+    public String getOrganization() { return organization; }
+    public void setOrganization(String organization) { this.organization = organization; }
+
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+
+    public boolean isActive() { return isActive; }
+    public void setActive(boolean active) { isActive = active; }
+
+    public Role getRole() { return role; }
+    public void setRole(Role role) { this.role = role; }
+
+    // ===================== UserDetails implementacija =====================
+
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        return List.of(new SimpleGrantedAuthority(role.name()));
     }
 
-    public void setSurName(String surName) {
-        this.surname = surName;
+    @Override
+    public String getUsername() {
+        // Ako želiš da korisnik loginuje preko email-a
+        return this.email;
     }
 
-    public Long getId() {
-        return id;
+    @Override
+    public boolean isAccountNonExpired() {
+        return true; // možeš kasnije dodati logiku ako nalog ističe
     }
 
-    public void setId(Long id) {
-        this.id = id;
+    @Override
+    public boolean isAccountNonLocked() {
+        return true; // možeš dodati logiku za ban korisnika
     }
 
-    public String getEmail() {
-        return email;
+    @Override
+    public boolean isCredentialsNonExpired() {
+        return true; // možeš dodati logiku ako lozinka ističe
     }
 
-    public void setEmail(String email) {
-        this.email = email;
+    @Override
+    public boolean isEnabled() {
+        return this.isActive;
     }
 
-    public String getPassword() {
-        return password;
-    }
-
-    public void setPassword(String password) {
-        this.password = password;
-    }
-
-    public String getOrganization() {
-        return organization;
-    }
-
-    public void setOrganization(String organization) {
-        this.organization = organization;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public boolean isActive() {
-        return isActive;
-    }
-
-    public void setActive(boolean active) {
-        isActive = active;
-    }
-
-    public Role getRole() {
-        return role;
-    }
-
-    public void setRole(Role role) {
-        this.role = role;
-    }
+    // ======================================================================
 
     @Override
     public String toString() {
@@ -117,6 +121,7 @@ public class User {
                 ", email='" + email + '\'' +
                 ", password='" + password + '\'' +
                 ", name='" + name + '\'' +
+                ", surname='" + surname + '\'' +
                 ", organization='" + organization + '\'' +
                 ", role=" + role +
                 ", isActive=" + isActive +

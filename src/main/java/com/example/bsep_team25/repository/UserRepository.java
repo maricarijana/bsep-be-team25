@@ -24,7 +24,7 @@ public UserRepository(IUserRepository iUserRepository) {
         return iUserRepository.findById(id);
     }
 
-    public Optional<User> findByEmail(String email) {
+    public User findByEmail(String email) {
         return iUserRepository.findByEmail(email);
     }
 

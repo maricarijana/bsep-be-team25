@@ -9,7 +9,7 @@ public interface IUserService {
 
     User save(User user);
     Optional<User> findById(Long id);
-    Optional<User> findByEmail(String email);
+    User findByEmail(String email);
     boolean existsByEmail(String email);
     List<User> findAll();
     void deleteById(Long id);
