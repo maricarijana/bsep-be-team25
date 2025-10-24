@@ -1,5 +1,6 @@
 package com.example.bsep_team25.security.auth;
 
+import com.example.bsep_team25.service.SessionManagementService;
 import com.example.bsep_team25.util.TokenUtils;
 import io.jsonwebtoken.ExpiredJwtException;
 import jakarta.servlet.FilterChain;
@@ -20,12 +21,14 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
     private TokenUtils tokenUtils;
 
     private UserDetailsService userDetailsService;
+    private SessionManagementService sessionManagementService;
 
     protected final Log LOGGER = LogFactory.getLog(getClass());
 
-    public TokenAuthenticationFilter(TokenUtils tokenHelper, UserDetailsService userDetailsService) {
+    public TokenAuthenticationFilter(TokenUtils tokenHelper, UserDetailsService userDetailsService,SessionManagementService sessionManagementService) {
         this.tokenUtils = tokenHelper;
         this.userDetailsService = userDetailsService;
+        this.sessionManagementService = sessionManagementService;
     }
 
     @Override
@@ -41,6 +44,23 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
 
             if (authToken != null) {
 
+
+                String jti = tokenUtils.getJtiFromToken(authToken);
+                if (jti != null && sessionManagementService.isBlacklisted(jti)) {
+                    LOGGER.debug("Token is blacklisted!");
+
+                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                    response.setHeader("X-Session-Revoked", "true");
+                    response.setContentType("application/json");
+                    response.setCharacterEncoding("UTF-8");
+
+                    response.getWriter().write(
+                            "{\"error\":\"SESSION_REVOKED\"," +
+                                    "\"message\":\"Your session was terminated\"}"
+                    );
+                    return;
+                }
+
                 // 2. Citanje korisnickog imena iz tokena
                 username = tokenUtils.getUsernameFromToken(authToken);
 
@@ -50,6 +70,10 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
                     UserDetails userDetails = userDetailsService.loadUserByUsername(username);
                     // 4. Provera da li je prosledjeni token validan
                     if (tokenUtils.validateToken(authToken, userDetails)) {
+
+                        if (jti != null) {
+                            sessionManagementService.updateLastActivity(username, jti);
+                        }
 
                         // 5. Kreiraj autentifikaciju
                         TokenBasedAuthentication authentication = new TokenBasedAuthentication(userDetails);

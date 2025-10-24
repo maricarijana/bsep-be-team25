@@ -4,11 +4,14 @@ import com.example.bsep_team25.dto.UserDTO;
 import com.example.bsep_team25.iservice.ICaptchaService;
 import com.example.bsep_team25.model.ActivationToken;
 import com.example.bsep_team25.model.Role;
+import com.example.bsep_team25.model.SessionInfo;
 import com.example.bsep_team25.model.User;
 import com.example.bsep_team25.service.ActivationTokenService;
 import com.example.bsep_team25.service.EmailService;
+import com.example.bsep_team25.service.SessionManagementService;
 import com.example.bsep_team25.service.UserService;
 import com.example.bsep_team25.util.PasswordValidator;
+import com.example.bsep_team25.util.RequestUtils;
 import com.example.bsep_team25.util.TokenUtils;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +41,8 @@ public class AuthController {
 
     @Autowired
     private ICaptchaService captchaService;
+    @Autowired
+    private SessionManagementService sessionManagementService;
 
 
     @PostMapping("/register")
@@ -97,12 +102,14 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody UserDTO userDto, HttpServletRequest request) {
 
-        String clientIp = request.getRemoteAddr();
+        String clientIp = RequestUtils.extractClientIpAddress(request);
         String captchaToken = userDto.getCaptchaToken();
 
-        if (!captchaService.validateCaptcha(captchaToken, clientIp)) {
-            return ResponseEntity.badRequest().body(Map.of("message", "CAPTCHA verification failed"));
-        }
+
+    if (!captchaService.validateCaptcha(captchaToken, clientIp)) {
+        return ResponseEntity.badRequest().body(Map.of("message", "CAPTCHA verification failed"));
+    }
+
         User user = userService.findByEmail(userDto.getEmail());
 
         if (user == null) {
@@ -121,6 +128,11 @@ public class AuthController {
 
         // GENERISANJE JWT tokena
         String jwt = tokenUtils.generateToken(user.getEmail(), user.getRole().toString());
+
+        String jti = tokenUtils.getJtiFromToken(jwt);
+        String userAgent = RequestUtils.extractUserAgent(request);
+        SessionInfo session = new SessionInfo(jti, user.getEmail(), clientIp, userAgent);
+        sessionManagementService.saveSession(user.getEmail(), session);
 
         // Vrati token + podatke o korisniku
         return ResponseEntity.ok(Map.of(
