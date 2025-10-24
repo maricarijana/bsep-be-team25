@@ -1,6 +1,7 @@
 package com.example.bsep_team25.controller;
 
 import com.example.bsep_team25.dto.UserDTO;
+import com.example.bsep_team25.iservice.ICaptchaService;
 import com.example.bsep_team25.model.ActivationToken;
 import com.example.bsep_team25.model.Role;
 import com.example.bsep_team25.model.User;
@@ -9,6 +10,7 @@ import com.example.bsep_team25.service.EmailService;
 import com.example.bsep_team25.service.UserService;
 import com.example.bsep_team25.util.PasswordValidator;
 import com.example.bsep_team25.util.TokenUtils;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -33,6 +35,9 @@ public class AuthController {
 
     @Autowired
     private TokenUtils tokenUtils;
+
+    @Autowired
+    private ICaptchaService captchaService;
 
 
     @PostMapping("/register")
@@ -84,8 +89,20 @@ public class AuthController {
         return ResponseEntity.badRequest().body(Map.of("message", "Activation link is invalid or expired"));
     }
 
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout() {
+        return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
+    }
+
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody UserDTO userDto) {
+    public ResponseEntity<?> login(@RequestBody UserDTO userDto, HttpServletRequest request) {
+
+        String clientIp = request.getRemoteAddr();
+        String captchaToken = userDto.getCaptchaToken();
+
+        if (!captchaService.validateCaptcha(captchaToken, clientIp)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "CAPTCHA verification failed"));
+        }
         User user = userService.findByEmail(userDto.getEmail());
 
         if (user == null) {
