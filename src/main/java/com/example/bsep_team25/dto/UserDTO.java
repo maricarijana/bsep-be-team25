@@ -12,6 +12,7 @@ public class UserDTO {
     private String organization;
     private Role role;
     private boolean active;
+    private String captchaToken;
 
     public UserDTO() {}
 
@@ -25,6 +26,14 @@ public class UserDTO {
         this.role = role;
         this.active = active;
 
+    }
+
+    public String getCaptchaToken() {
+        return captchaToken;
+    }
+
+    public void setCaptchaToken(String captchaToken) {
+        this.captchaToken = captchaToken;
     }
 
     public Long getId() {
