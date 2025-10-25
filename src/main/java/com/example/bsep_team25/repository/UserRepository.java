@@ -1,6 +1,7 @@
 package com.example.bsep_team25.repository;
 
 import com.example.bsep_team25.irepository.IUserRepository;
+import com.example.bsep_team25.model.Role;
 import com.example.bsep_team25.model.User;
 import org.springframework.stereotype.Repository;
 
@@ -39,4 +40,10 @@ public UserRepository(IUserRepository iUserRepository) {
     public void deleteById(Long id) {
         iUserRepository.deleteById(id);
     }
+
+    public Optional<User> findByRole(Role role) {
+        return iUserRepository.findByRole(role);
+    }
+
+
 }
