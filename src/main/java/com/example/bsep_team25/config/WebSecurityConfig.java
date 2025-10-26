@@ -3,6 +3,7 @@ package com.example.bsep_team25.config;
 import com.example.bsep_team25.security.auth.RestAuthenticationEntryPoint;
 import com.example.bsep_team25.security.auth.TokenAuthenticationFilter;
 import com.example.bsep_team25.service.CustomUserDetailsService;
+import com.example.bsep_team25.service.SessionManagementService;
 import com.example.bsep_team25.util.TokenUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
@@ -38,6 +39,10 @@ public class WebSecurityConfig {
 
     @Autowired
     private TokenUtils tokenUtils;
+
+    @Autowired
+    private SessionManagementService sessionManagementService;  // 🆕
+
 
     @Bean
     public UserDetailsService userDetailsService() {
@@ -78,7 +83,7 @@ public class WebSecurityConfig {
                         .anyRequest().authenticated()
                 )
                 // dodaj naš JWT filter pre default BasicAuth filtera
-                .addFilterBefore(new TokenAuthenticationFilter(tokenUtils, userDetailsService()), BasicAuthenticationFilter.class)
+                .addFilterBefore(new TokenAuthenticationFilter(tokenUtils, userDetailsService(),sessionManagementService), BasicAuthenticationFilter.class)
                 .authenticationProvider(authenticationProvider());
 
         return http.build();
@@ -92,6 +97,8 @@ public class WebSecurityConfig {
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
+
+        configuration.setExposedHeaders(List.of("Authorization", "X-Session-Revoked"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);

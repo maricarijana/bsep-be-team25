@@ -20,6 +20,7 @@ import io.jsonwebtoken.SignatureAlgorithm;
 import javax.crypto.SecretKey;
 import javax.crypto.SecretKey;
 import java.util.Date;
+import java.util.UUID;
 
 @Component
 public class TokenUtils {
@@ -65,9 +66,11 @@ public class TokenUtils {
     private SecretKey secretKey = Keys.secretKeyFor(SignatureAlgorithm.HS512);
 
     public String generateToken(String username, String role) {
+        String jti = UUID.randomUUID().toString();
         return Jwts.builder()
                 .setIssuer(APP_NAME)
                 .setSubject(username)
+                .setId(jti)
                 .claim("role", role)
                 .setAudience(generateAudience())
                 .setIssuedAt(new Date())
@@ -294,5 +297,14 @@ public class TokenUtils {
      */
     public String getAuthHeaderFromHeader(HttpServletRequest request) {
         return request.getHeader(AUTH_HEADER);
+    }
+
+    public String getJtiFromToken(String token) {
+        try {
+            Claims claims = getAllClaimsFromToken(token);
+            return claims.getId();
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

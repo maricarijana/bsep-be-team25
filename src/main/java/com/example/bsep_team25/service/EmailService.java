@@ -32,4 +32,23 @@ public class EmailService {
         mailSender.send(message);
     }
 
+    public void sendCAUserCredentials(String email, String temporaryPassword, String organization) {
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setTo(email);
+        message.setSubject("Your CA User Account - " + organization);
+        message.setText(
+                "Hello,\n\n" +
+                        "An administrator has created a CA User account for you.\n\n" +
+                        "Organization: " + organization + "\n" +
+                        "Email: " + email + "\n" +
+                        "Temporary Password: " + temporaryPassword + "\n\n" +
+                        "IMPORTANT: You must change this password upon first login.\n\n" +
+                        "Login at: http://localhost:4200/login\n\n" +
+                        "Best regards,\n" +
+                        "PKI System Team"
+        );
+
+        mailSender.send(message);
+    }
+
 }

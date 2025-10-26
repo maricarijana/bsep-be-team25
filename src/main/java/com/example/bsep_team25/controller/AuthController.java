@@ -4,15 +4,19 @@ import com.example.bsep_team25.dto.UserDTO;
 import com.example.bsep_team25.iservice.ICaptchaService;
 import com.example.bsep_team25.model.ActivationToken;
 import com.example.bsep_team25.model.Role;
+import com.example.bsep_team25.model.SessionInfo;
 import com.example.bsep_team25.model.User;
 import com.example.bsep_team25.service.ActivationTokenService;
 import com.example.bsep_team25.service.EmailService;
+import com.example.bsep_team25.service.SessionManagementService;
 import com.example.bsep_team25.service.UserService;
 import com.example.bsep_team25.util.PasswordValidator;
+import com.example.bsep_team25.util.RequestUtils;
 import com.example.bsep_team25.util.TokenUtils;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
@@ -38,6 +42,8 @@ public class AuthController {
 
     @Autowired
     private ICaptchaService captchaService;
+    @Autowired
+    private SessionManagementService sessionManagementService;
 
 
     @PostMapping("/register")
@@ -97,12 +103,14 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody UserDTO userDto, HttpServletRequest request) {
 
-        String clientIp = request.getRemoteAddr();
+        String clientIp = RequestUtils.extractClientIpAddress(request);
         String captchaToken = userDto.getCaptchaToken();
+
 
         if (!captchaService.validateCaptcha(captchaToken, clientIp)) {
             return ResponseEntity.badRequest().body(Map.of("message", "CAPTCHA verification failed"));
         }
+
         User user = userService.findByEmail(userDto.getEmail());
 
         if (user == null) {
@@ -122,6 +130,11 @@ public class AuthController {
         // GENERISANJE JWT tokena
         String jwt = tokenUtils.generateToken(user.getEmail(), user.getRole().toString());
 
+        String jti = tokenUtils.getJtiFromToken(jwt);
+        String userAgent = RequestUtils.extractUserAgent(request);
+        SessionInfo session = new SessionInfo(jti, user.getEmail(), clientIp, userAgent);
+        sessionManagementService.saveSession(user.getEmail(), session);
+
         // Vrati token + podatke o korisniku
         return ResponseEntity.ok(Map.of(
                 "message", "Login successful",
@@ -130,11 +143,43 @@ public class AuthController {
                 "name", user.getName(),
                 "surname", user.getSurname(),
                 "organization", user.getOrganization(),
-                "role", user.getRole().toString()
+                "role", user.getRole().toString(),
+                "mustChangePassword", user.isMustChangePassword()
         ));
     }
+    @PostMapping("/change-password")
+    public ResponseEntity<?> changePassword(@RequestBody Map<String, String> payload) {
 
+        // Izvuci email iz Spring Security konteksta (JWT je već validiran)
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
 
+        String oldPassword = payload.get("oldPassword");
+        String newPassword = payload.get("newPassword");
+        String confirmPassword = payload.get("confirmPassword");
 
+        if (!newPassword.equals(confirmPassword)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Passwords do not match"));
+        }
 
+        if (!PasswordValidator.isValid(newPassword)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Password does not meet requirements"));
+        }
+
+        User user = userService.findByEmail(email);
+
+        if (user == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "User not found"));
+        }
+
+        BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+        if (!encoder.matches(oldPassword, user.getPassword())) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Old password is incorrect"));
+        }
+
+        user.setPassword(encoder.encode(newPassword));
+        user.setMustChangePassword(false);
+        userService.save(user);
+
+        return ResponseEntity.ok(Map.of("message", "Password changed successfully"));
+    }
 }

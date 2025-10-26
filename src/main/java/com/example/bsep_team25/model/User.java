@@ -39,6 +39,9 @@ public class User implements UserDetails, Serializable {
     @Column(nullable = false)
     private boolean isActive = false;
 
+    @Column(nullable = false)
+    private boolean mustChangePassword = false;
+
     public User() {}
 
     public User(Long id, String email, String password, String name, String surname,
@@ -54,6 +57,10 @@ public class User implements UserDetails, Serializable {
     }
 
     // Getteri i setteri
+    public boolean isMustChangePassword() { return mustChangePassword; }
+    public void setMustChangePassword(boolean mustChangePassword) {
+        this.mustChangePassword = mustChangePassword;
+    }
     public String getSurname() { return surname; }
     public void setSurName(String surName) { this.surname = surName; }
 
@@ -111,6 +118,7 @@ public class User implements UserDetails, Serializable {
     public boolean isEnabled() {
         return this.isActive;
     }
+
 
     // ======================================================================
 
