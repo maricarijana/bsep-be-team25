@@ -42,7 +42,7 @@ public class CertificateService {
                                                String country, int validityYears) throws Exception {
 
         log.info("Creating ROOT CA certificate for: {}", commonName);
-        User admin = userRepository.findByRole(Role.ADMIN)
+        User admin = userRepository.findFirstByRole(Role.ADMIN)
                 .orElseThrow(() -> new IllegalStateException("Admin user not found"));
 
         // Generiši key pair
