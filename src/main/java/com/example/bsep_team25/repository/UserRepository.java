@@ -41,9 +41,13 @@ public UserRepository(IUserRepository iUserRepository) {
         iUserRepository.deleteById(id);
     }
 
-    public Optional<User> findByRole(Role role) {
+    public List<User> findByRole(Role role) {
         return iUserRepository.findByRole(role);
     }
+    public Optional<User> findFirstByRole(Role role) {
+        return iUserRepository.findFirstByRole(role);
+    }
+
 
 
 }

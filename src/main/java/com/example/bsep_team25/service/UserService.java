@@ -7,6 +7,7 @@ import com.example.bsep_team25.model.User;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.stereotype.Service;
+import com.example.bsep_team25.model.Role;
 
 import java.util.List;
 import java.util.Optional;
@@ -45,5 +46,13 @@ public class UserService implements IUserService {
     @Override
     public void deleteById(Long id) {
         userRepository.deleteById(id);
+    }
+
+    @Override
+    public List<User> findByRole(Role role) {return userRepository.findByRole(role);}
+
+    @Override
+    public Optional<User> findFirstByRole(Role role) {
+        return userRepository.findFirstByRole(role);
     }
 }
