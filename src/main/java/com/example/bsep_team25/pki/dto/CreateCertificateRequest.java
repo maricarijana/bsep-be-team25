@@ -30,4 +30,5 @@ public class CreateCertificateRequest {
     private List<String> extendedKeyUsage; // ["serverAuth", "clientAuth"]
     private List<String> subjectAlternativeNames; // ["DNS:example.com", "IP:192.168.1.1"]
 
+    private Long ownerId;
 }

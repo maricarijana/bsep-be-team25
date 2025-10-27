@@ -1,6 +1,7 @@
 package com.example.bsep_team25.pki.domain;
 
 import com.example.bsep_team25.model.User;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 
 import jdk.jfr.DataAmount;
@@ -62,6 +63,7 @@ public class Certificate {
 
     // Da li je CA sertifikat
     @Column(nullable = false)
+    @JsonProperty("isCA")
     private boolean isCA = false;
 
     // Sertifikat u PEM formatu
