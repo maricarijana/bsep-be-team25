@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x500.X500NameBuilder;
 import org.bouncycastle.asn1.x500.style.BCStyle;
+import org.bouncycastle.pkcs.PKCS10CertificationRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,10 +21,7 @@ import java.security.PrivateKey;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 
 @Service
@@ -36,6 +34,7 @@ public class CertificateService {
     private final CertificateGenerator certificateGenerator;
     private final CertificateValidationService validationService;
     private final KeystoreService keystoreService;
+    private final CSRProcessingService csrProcessingService;
 
     @Transactional
     public Certificate createRootCACertificate( String commonName, String organization,
@@ -135,6 +134,8 @@ public class CertificateService {
         // Validacija izdavaoca
         validationService.validateIssuerBeforeSigning(issuerCert);
 
+        validateOrganization(caUser, organization);
+
         // Proveri da li trajanje ne prelazi trajanje izdavaoca
         LocalDateTime validFrom = LocalDateTime.now();
         LocalDateTime validUntil = validFrom.plusYears(validityYears);
@@ -214,83 +215,85 @@ public class CertificateService {
         return certificate;
     }
 
-    @Transactional
-    public Certificate createEndEntityCertificate(
-            User endUser,
-            String commonName,
-            String organization,
-            String country,
-            int validityYears,
-            String issuerSerialNumber,
-            List<String> keyUsage,
-            List<String> extendedKeyUsage,
-            List<String> subjectAlternativeNames) throws Exception {
-
-        log.info("Creating END ENTITY certificate for: {}", commonName);
-
-        Certificate issuerCert = certificateRepository.findBySerialNumber(issuerSerialNumber)
-                .orElseThrow(() -> new IllegalArgumentException("Issuer certificate not found"));
-
-        validationService.validateIssuerBeforeSigning(issuerCert);
-
-        LocalDateTime validFrom = LocalDateTime.now();
-        LocalDateTime validUntil = validFrom.plusYears(validityYears);
-
-        if (validUntil.isAfter(issuerCert.getValidUntil())) {
-            throw new IllegalArgumentException("Certificate validity period exceeds issuer's validity");
-        }
-
-        KeyPair keyPair = certificateGenerator.generateKeyPair();
-
-        Subject subject = new Subject();
-        subject.setCommonName(commonName);
-        subject.setOrganization(organization);
-        subject.setCountry(country);
-        subject.setPublicKey(keyPair.getPublic());
-
-        PrivateKey issuerPrivateKey = keystoreService.loadPrivateKey(issuerSerialNumber, issuerCert.getOwner());
-        X500Name issuerX500Name = buildX500Name(issuerCert);
-        Issuer issuer = new Issuer(issuerPrivateKey, issuerX500Name);
-
-        String serialNumber = generateSerialNumber();
-
-        X509Certificate x509Cert = certificateGenerator.generateCertificate(
-                subject,
-                issuer,
-                validFrom,
-                validUntil,
-                serialNumber,
-                false, // not CA
-                null,
-                keyUsage,
-                extendedKeyUsage,
-                subjectAlternativeNames
-        );
-
-        String pemCert = x509ToPem(x509Cert);
-        String publicKeyPem = publicKeyToPem(keyPair.getPublic());
-
-        Certificate certificate = Certificate.builder()
-                .serialNumber(serialNumber)
-                .commonName(commonName)
-                .organization(organization)
-                .country(country)
-                .validFrom(validFrom)
-                .validUntil(validUntil)
-                .certificateType(CertificateType.END_ENTITY)
-                .isCA(false)
-                .pemCertificate(pemCert)
-                .publicKeyPem(publicKeyPem)
-                .issuerCertificate(issuerCert)
-                .owner(endUser)
-                .build();
-
-        certificate = certificateRepository.save(certificate);
-
-        // Za EE sertifikat NE čuvamo privatni ključ na serveru!
-        log.info("END ENTITY certificate created with serial: {}", serialNumber);
-        return certificate;
-    }
+//    @Transactional
+//    public Certificate createEndEntityCertificate(
+//            User endUser,
+//            String commonName,
+//            String organization,
+//            String country,
+//            int validityYears,
+//            String issuerSerialNumber,
+//            List<String> keyUsage,
+//            List<String> extendedKeyUsage,
+//            List<String> subjectAlternativeNames) throws Exception {
+//
+//        log.info("Creating END ENTITY certificate for: {}", commonName);
+//
+//        Certificate issuerCert = certificateRepository.findBySerialNumber(issuerSerialNumber)
+//                .orElseThrow(() -> new IllegalArgumentException("Issuer certificate not found"));
+//
+//        validationService.validateIssuerBeforeSigning(issuerCert);
+//
+//        validateOrganization(endUser, organization);
+//
+//        LocalDateTime validFrom = LocalDateTime.now();
+//        LocalDateTime validUntil = validFrom.plusYears(validityYears);
+//
+//        if (validUntil.isAfter(issuerCert.getValidUntil())) {
+//            throw new IllegalArgumentException("Certificate validity period exceeds issuer's validity");
+//        }
+//
+//        KeyPair keyPair = certificateGenerator.generateKeyPair();
+//
+//        Subject subject = new Subject();
+//        subject.setCommonName(commonName);
+//        subject.setOrganization(organization);
+//        subject.setCountry(country);
+//        subject.setPublicKey(keyPair.getPublic());
+//
+//        PrivateKey issuerPrivateKey = keystoreService.loadPrivateKey(issuerSerialNumber, issuerCert.getOwner());
+//        X500Name issuerX500Name = buildX500Name(issuerCert);
+//        Issuer issuer = new Issuer(issuerPrivateKey, issuerX500Name);
+//
+//        String serialNumber = generateSerialNumber();
+//
+//        X509Certificate x509Cert = certificateGenerator.generateCertificate(
+//                subject,
+//                issuer,
+//                validFrom,
+//                validUntil,
+//                serialNumber,
+//                false, // not CA
+//                null,
+//                keyUsage,
+//                extendedKeyUsage,
+//                subjectAlternativeNames
+//        );
+//
+//        String pemCert = x509ToPem(x509Cert);
+//        String publicKeyPem = publicKeyToPem(keyPair.getPublic());
+//
+//        Certificate certificate = Certificate.builder()
+//                .serialNumber(serialNumber)
+//                .commonName(commonName)
+//                .organization(organization)
+//                .country(country)
+//                .validFrom(validFrom)
+//                .validUntil(validUntil)
+//                .certificateType(CertificateType.END_ENTITY)
+//                .isCA(false)
+//                .pemCertificate(pemCert)
+//                .publicKeyPem(publicKeyPem)
+//                .issuerCertificate(issuerCert)
+//                .owner(endUser)
+//                .build();
+//
+//        certificate = certificateRepository.save(certificate);
+//
+//        // Za EE sertifikat NE čuvamo privatni ključ na serveru!
+//        log.info("END ENTITY certificate created with serial: {}", serialNumber);
+//        return certificate;
+//    }
 
     private String generateSerialNumber() {
         SecureRandom random = new SecureRandom();
@@ -358,5 +361,291 @@ public class CertificateService {
 
         certificateRepository.save(cert);
         log.info("Certificate revoked: {} - Reason: {}", serialNumber, reason);
+    }
+
+    @Transactional
+    public Certificate createIntermediateCACertificate(
+            Long ownerId,                    // ✅ LONG
+            User currentUser,
+            String commonName,
+            String organization,
+            String country,
+            int validityYears,
+            String issuerSerialNumber,
+            Integer pathLength) throws Exception {
+
+        log.info("Creating INTERMEDIATE CA certificate with ownerId: {} by user: {}",
+                ownerId, currentUser.getEmail());
+
+        // Odredi vlasnika
+        User owner = determineOwner(ownerId, currentUser);
+
+        // Pozovi originalnu metodu
+        return createIntermediateCACertificate(
+                owner,
+                commonName,
+                organization,
+                country,
+                validityYears,
+                issuerSerialNumber,
+                pathLength
+        );
+    }
+
+    /**
+     * Određuje ko će biti vlasnik sertifikata na osnovu uloge trenutnog korisnika.
+     *
+     * @param ownerId ID željenog vlasnika (null = currentUser)
+     * @param currentUser Trenutno ulogovani korisnik
+     * @return User koji će biti vlasnik sertifikata
+     * @throws SecurityException Ako korisnik nema permisiju
+     * @throws IllegalArgumentException Ako korisnik nije pronađen ili nema ispravnu ulogu
+     */
+    private User determineOwner(Long ownerId, User currentUser) {   // ✅ LONG
+        if (currentUser.getRole() == Role.ADMIN) {
+            // Admin može kreirati za druge korisnike
+            if (ownerId != null) {
+                log.info("Admin {} creating certificate for user ID: {}",
+                        currentUser.getEmail(), ownerId);
+
+                User owner = userRepository.findById(ownerId)
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "User not found with ID: " + ownerId));
+
+                // Provera da je target user CA_USER ili ADMIN
+                if (owner.getRole() != Role.CA_USER && owner.getRole() != Role.ADMIN) {
+                    throw new IllegalArgumentException(
+                            "Owner must be a CA_USER or ADMIN, but found: " + owner.getRole());
+                }
+
+                log.info("Certificate will be owned by: {} ({})",
+                        owner.getEmail(), owner.getRole());
+                return owner;
+            } else {
+                // Ako ownerId nije poslat, admin kreira za sebe
+                log.info("Admin {} creating certificate for themselves", currentUser.getEmail());
+                return currentUser;
+            }
+        } else if (currentUser.getRole() == Role.CA_USER) {
+            // CA_USER može kreirati samo za sebe
+            if (ownerId != null && !ownerId.equals(currentUser.getId())) {
+                log.error("CA_USER {} attempted to create certificate for user ID: {}",
+                        currentUser.getEmail(), ownerId);
+                throw new SecurityException(
+                        "CA_USER can only create certificates for themselves. " +
+                                "Attempted to create for user ID: " + ownerId);
+            }
+            log.info("CA_USER {} creating certificate for themselves", currentUser.getEmail());
+            return currentUser;
+        } else {
+            log.error("User {} with role {} attempted to create INTERMEDIATE CA",
+                    currentUser.getEmail(), currentUser.getRole());
+            throw new SecurityException(
+                    "Insufficient permissions. User role: " + currentUser.getRole());
+        }
+    }
+    /**
+     * Validira da CA korisnik može kreirati sertifikate samo za svoju organizaciju
+     */
+    private void validateOrganization(User user, String requestedOrganization) {
+        if (user.getRole() == Role.CA_USER) {
+            // Pronađi CA sertifikat korisnika
+            List<Certificate> userCACerts = certificateRepository
+                    .findActiveCACertificatesByOwner(user.getId());
+
+            if (!userCACerts.isEmpty()) {
+                String userOrganization = userCACerts.get(0).getOrganization();
+
+                // Proveri da li je organization ista
+                if (!userOrganization.equalsIgnoreCase(requestedOrganization)) {
+                    throw new SecurityException(
+                            String.format(
+                                    "CA users can only issue certificates for their own organization. " +
+                                            "Your organization: '%s', Requested: '%s'",
+                                    userOrganization,
+                                    requestedOrganization
+                            )
+                    );
+                }
+
+                log.info("Organization validation passed for user {} - organization: {}",
+                        user.getEmail(), userOrganization);
+            }
+        }
+    }
+
+    /**
+     * Pronalazi sve sertifikate u lancu korisnika (za CA_USER)
+     */
+    public List<Certificate> getCertificatesInUserChain(User user) {
+        // 1. Pronađi sve CA sertifikate korisnika
+        List<Certificate> userCAs = certificateRepository
+                .findActiveCACertificatesByOwner(user.getId());
+
+        Set<Long> chainCertIds = new HashSet<>();
+
+        // 2. Za svaki CA, pronađi sve sertifikate izdane njime (rekurzivno)
+        for (Certificate ca : userCAs) {
+            chainCertIds.add(ca.getId());
+            findDescendantCertificates(ca, chainCertIds);
+        }
+
+        // 3. Vrati sve sertifikate iz lanca
+        return certificateRepository.findAllById(chainCertIds);
+    }
+    private void findDescendantCertificates(Certificate parent, Set<Long> result) {
+        List<Certificate> children = certificateRepository
+                .findByIssuerCertificateId(parent.getId());
+
+        for (Certificate child : children) {
+            result.add(child.getId());
+            if (child.isCA()) {
+                // Rekurzivno prolazi kroz lanac
+                findDescendantCertificates(child, result);
+            }
+        }
+    }
+
+
+    /**
+     * Kreira END_ENTITY sertifikat iz upload-ovanog CSR-a.
+     * Korisnik je generisao ključeve lokalno - server dobija samo javni ključ kroz CSR.
+     *
+     * POKRIVA SPECIFIKACIJU:
+     * - "End-entity korisnici prave CSR putem eksterne generacije"
+     * - "korisnik sam generiše ključeve"
+     * - "upload-uje kroz formu na PKI sistemu"
+     * - "odabere CA za digitalni potpis"
+     * - "unese trajanje sertifikata pri čemu se mora poštovati trajanje sertifikata odabranog CA"
+     */
+    /**
+     * Kreira END_ENTITY sertifikat iz upload-ovanog CSR-a.
+     * Korisnik je generisao ključeve lokalno - server dobija samo javni ključ kroz CSR.
+     *
+     * POKRIVA SPECIFIKACIJU:
+     * - "End-entity korisnici prave CSR putem eksterne generacije"
+     * - "korisnik sam generiše ključeve"
+     * - "CSR sadrži sve podatke o vlasniku sertifikata (X500Name), javni ključ i ekstenzije"
+     * - "upload-uje kroz formu na PKI sistemu"
+     * - "odabere CA za digitalni potpis"
+     * - "unese trajanje sertifikata pri čemu se mora poštovati trajanje odabranog CA"
+     */
+    @Transactional
+    public Certificate createEndEntityFromCSR(
+            User owner,
+            String csrPem,
+            String issuerSerialNumber,
+            int validityYears) throws Exception {
+
+        log.info("Creating END_ENTITY certificate from CSR for user: {}", owner.getEmail());
+
+        // 1. PARSIRANJE CSR-a - izvlači Subject podatke i javni ključ
+        // POKRIVA: "CSR sadrži sve podatke o vlasniku sertifikata (X500Name), javni ključ"
+        Subject subject = csrProcessingService.extractSubjectFromCSR(csrPem);
+
+        // 1b. Parsira CSR objekat za ekstenzije
+        PKCS10CertificationRequest csr = csrProcessingService.parseCSR(csrPem);
+
+        // 1c. Izvuci EKSTENZIJE iz CSR-a
+        // POKRIVA: "CSR sadrži... ekstenzije"
+        List<String> keyUsage = csrProcessingService.extractKeyUsageFromCSR(csr);
+        List<String> extendedKeyUsage = csrProcessingService.extractExtendedKeyUsageFromCSR(csr);
+        List<String> subjectAlternativeNames = csrProcessingService.extractSANFromCSR(csr);
+
+        log.info("Extracted extensions from CSR - KeyUsage: {}, ExtendedKeyUsage: {}, SAN: {}",
+                keyUsage, extendedKeyUsage, subjectAlternativeNames);
+
+        // 2. VALIDACIJA CSR sadržaja
+        csrProcessingService.validateCSRContent(subject);
+
+        // 3. UČITAJ CA ISSUER
+        // POKRIVA: "omogućiti korisniku da odabere CA za digitalni potpis"
+        Certificate issuerCert = certificateRepository.findBySerialNumber(issuerSerialNumber)
+                .orElseThrow(() -> new IllegalArgumentException("Issuer certificate not found"));
+
+        // 4. VALIDACIJA ISSUER-a
+        validationService.validateIssuerBeforeSigning(issuerCert);
+
+        // 5. VALIDACIJA ORGANIZACIJE (ako je CA_USER)
+        validateOrganization(owner, subject.getOrganization());
+
+        // 6. VALIDACIJA TRAJANJA
+        // POKRIVA: "unese trajanje sertifikata pri čemu se mora poštovati trajanje odabranog CA"
+        LocalDateTime validFrom = LocalDateTime.now();
+        LocalDateTime validUntil = validFrom.plusYears(validityYears);
+
+        if (validUntil.isAfter(issuerCert.getValidUntil())) {
+            throw new IllegalArgumentException(
+                    String.format(
+                            "Certificate validity (%s) cannot exceed issuer's validity (%s). " +
+                                    "Maximum allowed: %d years",
+                            validUntil,
+                            issuerCert.getValidUntil(),
+                            java.time.temporal.ChronoUnit.YEARS.between(validFrom, issuerCert.getValidUntil())
+                    )
+            );
+        }
+
+        // 7. ISSUER - učitaj privatni ključ CA-a za potpisivanje
+        PrivateKey issuerPrivateKey = keystoreService.loadPrivateKey(
+                issuerSerialNumber,
+                issuerCert.getOwner()
+        );
+        X500Name issuerX500Name = buildX500Name(issuerCert);
+        Issuer issuer = new Issuer(issuerPrivateKey, issuerX500Name);
+
+        // 8. GENERIŠI SERIAL NUMBER
+        String serialNumber = generateSerialNumber();
+
+        // 9. GENERIŠI SERTIFIKAT koristeći JAVNI KLJUČ I EKSTENZIJE IZ CSR-A!
+        // KLJUČNA RAZLIKA: subject.getPublicKey() i ekstenzije dolaze iz CSR-a, ne generišemo KeyPair!
+        X509Certificate x509Cert = certificateGenerator.generateCertificate(
+                subject,  // ← subject.publicKey je iz CSR-a!
+                issuer,
+                validFrom,
+                validUntil,
+                serialNumber,
+                false,  // nije CA
+                null,   // pathLength
+                keyUsage.isEmpty() ? null : keyUsage,  // ← keyUsage iz CSR-a
+                extendedKeyUsage.isEmpty() ? null : extendedKeyUsage,  // ← extendedKeyUsage iz CSR-a
+                subjectAlternativeNames.isEmpty() ? null : subjectAlternativeNames  // ← SAN iz CSR-a
+        );
+
+        // 10. KONVERTUJ U PEM
+        String pemCert = x509ToPem(x509Cert);
+        String publicKeyPem = publicKeyToPem(subject.getPublicKey());
+
+        // 11. SAČUVAJ U BAZI (BEZ privatnog ključa!)
+        Certificate certificate = Certificate.builder()
+                .serialNumber(serialNumber)
+                .commonName(subject.getCommonName())
+                .organization(subject.getOrganization())
+                .organizationalUnit(subject.getOrganizationalUnit())
+                .country(subject.getCountry())
+                .state(subject.getState())
+                .locality(subject.getLocality())
+                .email(subject.getEmail())
+                .validFrom(validFrom)
+                .validUntil(validUntil)
+                .certificateType(CertificateType.END_ENTITY)
+                .isCA(false)
+                .pemCertificate(pemCert)
+                .publicKeyPem(publicKeyPem)
+                .issuerCertificate(issuerCert)
+                .owner(owner)
+                .build();
+
+        certificate = certificateRepository.save(certificate);
+
+        // 12. NE poziva keystoreService.savePrivateKeyAndCertificate!
+        // Privatni ključ ostaje kod korisnika!
+
+        log.info("END_ENTITY certificate created from CSR: {}", serialNumber);
+        log.info("Certificate issued with extensions from CSR - KeyUsage: {}, EKU: {}, SAN: {}",
+                keyUsage, extendedKeyUsage, subjectAlternativeNames);
+        log.warn("Private key was NOT provided and remains with the user locally!");
+
+        return certificate;
     }
 }
