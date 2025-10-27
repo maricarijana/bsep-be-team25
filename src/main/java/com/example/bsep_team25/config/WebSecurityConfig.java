@@ -79,7 +79,7 @@ public class WebSecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                         .requestMatchers("/api/auth/register", "/api/auth/activate/**").permitAll()
                         .requestMatchers("/api/password/**").permitAll()
-                        .requestMatchers("/api/pki/certificates/**").permitAll()
+                      //  .requestMatchers("/api/pki/certificates/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 // dodaj naš JWT filter pre default BasicAuth filtera

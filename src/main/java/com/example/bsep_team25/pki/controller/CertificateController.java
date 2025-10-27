@@ -8,7 +8,9 @@ import com.example.bsep_team25.pki.dto.CertificateResponse;
 import com.example.bsep_team25.pki.dto.CreateCertificateRequest;
 import com.example.bsep_team25.pki.dto.RevokeCertificateRequest;
 import com.example.bsep_team25.pki.repository.KeystoreInfoRepository;
+import com.example.bsep_team25.pki.service.CRLService;
 import com.example.bsep_team25.pki.service.CertificateService;
+import com.example.bsep_team25.pki.service.CertificateTemplateService;
 import com.example.bsep_team25.pki.service.EncryptionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +21,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.security.cert.X509CRL;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -29,14 +32,17 @@ import java.util.stream.Collectors;
 @Slf4j
 public class CertificateController {
 
+    private final CRLService crlService;
     private final CertificateService certificateService;
     private final KeystoreInfoRepository keystoreInfoRepository;
     private final EncryptionService encryptionService;
+    private final CertificateTemplateService certificateTemplateService;
+
     /**
      * Admin kreira ROOT CA sertifikat
      */
     @PostMapping("/root")
-// @PreAuthorize("hasAuthority('ADMIN')") // možeš uključiti kasnije kad bude radio JWT
+   @PreAuthorize("hasAuthority('ADMIN')") // možeš uključiti kasnije kad bude radio JWT
     public ResponseEntity<?> createRootCA(
            //@AuthenticationPrincipal User admin,
             @RequestBody CreateCertificateRequest request) {
@@ -90,14 +96,10 @@ public class CertificateController {
         }
     }
 
-    /**
-     * Svi autentifikovani korisnici mogu kreirati END ENTITY sertifikat
-     */
-    /**
-     * Svi autentifikovani korisnici mogu kreirati END ENTITY sertifikat
-     */
+
     /**
      * Kreiranje END ENTITY sertifikata iz upload-ovanog CSR-a
+     * SA OPCIONALNOM PODRŠKOM ZA ŠABLONE
      */
     @PostMapping("/end-entity/from-csr")
     @PreAuthorize("isAuthenticated()")
@@ -105,15 +107,34 @@ public class CertificateController {
             @AuthenticationPrincipal User user,
             @RequestParam("csr") MultipartFile csrFile,
             @RequestParam("issuerSerialNumber") String issuerSerialNumber,
-            @RequestParam("validityYears") Integer validityYears) {
+            @RequestParam("validityYears") Integer validityYears,
+            @RequestParam(value = "templateName", required = false) String templateName) { // ✅ NOVO
+
         try {
             if (csrFile.isEmpty()) {
-                return ResponseEntity.badRequest().body("CSR file is required");
+                return ResponseEntity.badRequest().body(Map.of("error", "CSR file is required"));
             }
 
             String csrPem = new String(csrFile.getBytes(), java.nio.charset.StandardCharsets.UTF_8);
 
-            Certificate cert = certificateService.createEndEntityFromCSR(  // ← OVA METODA POSTOJI!
+            // ✅ NOVA LOGIKA - Validacija prema šablonu ako je naveden
+            if (templateName != null && !templateName.isBlank()) {
+                log.info("Validating CSR against template: {}", templateName);
+
+                // Parsiramo CSR da izvučemo CN i SAN
+                Map<String, Object> csrData = certificateService.parseCSR(csrPem);
+
+                // Validacija prema šablonu
+                certificateTemplateService.validateCSRAgainstTemplate(
+                        templateName,
+                        (String) csrData.get("commonName"),
+                        (List<String>) csrData.get("subjectAlternativeNames"),
+                        validityYears
+                );
+            }
+
+            // Standardna logika za kreiranje sertifikata iz CSR-a
+            Certificate cert = certificateService.createEndEntityFromCSR(
                     user,
                     csrPem,
                     issuerSerialNumber,
@@ -121,19 +142,18 @@ public class CertificateController {
             );
 
             return ResponseEntity.ok(Map.of(
-                    "message", "Certificate issued successfully!",
+                    "message", "Certificate issued successfully from CSR!",
                     "certificate", mapToResponse(cert)
             ));
 
         } catch (IllegalArgumentException e) {
             log.error("CSR validation error: ", e);
-            return ResponseEntity.badRequest().body("CSR Error: " + e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", "CSR validation failed: " + e.getMessage()));
         } catch (Exception e) {
             log.error("Error creating certificate from CSR: ", e);
-            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", "Failed to create certificate: " + e.getMessage()));
         }
     }
-
     /**
      * Admin vidi sve sertifikate
      */
@@ -237,10 +257,22 @@ public class CertificateController {
     public ResponseEntity<?> revokeCertificate(@RequestBody RevokeCertificateRequest request) {
         try {
             certificateService.revokeCertificate(request.getSerialNumber(), request.getReason());
-            return ResponseEntity.ok("Certificate revoked successfully");
+
+            // ✅ Vrati JSON objekat umesto plain text
+            return ResponseEntity.ok(Map.of(
+                    "message", "Certificate revoked successfully",
+                    "serialNumber", request.getSerialNumber(),
+                    "reason", request.getReason()
+            ));
+
         } catch (Exception e) {
             log.error("Error revoking certificate: ", e);
-            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+
+            // ✅ I error vrati kao JSON
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Failed to revoke certificate",
+                    "message", e.getMessage()
+            ));
         }
     }
 
@@ -271,5 +303,72 @@ public class CertificateController {
         }
 
         return builder.build();
+    }
+
+    /**
+     * Javno dostupan endpoint za preuzimanje CRL liste
+     * Ne zahteva autentifikaciju jer klijenti moraju moći da provere povučenost
+     */
+    @GetMapping(value = "/crl", produces = "application/pkix-crl")
+    public ResponseEntity<byte[]> getCRL(
+            @RequestParam(required = false) String issuer) {
+        try {
+            X509CRL crl;
+
+            if (issuer != null) {
+                // Pronađi CA vlasnika
+                Certificate caCert = certificateService.getCertificateBySerialNumber(issuer);
+                crl = crlService.generateCRL(issuer, caCert.getOwner());
+            } else {
+                // Generiši ROOT CA CRL
+                crl = crlService.generateRootCRL();
+            }
+
+            byte[] crlBytes = crl.getEncoded();
+
+            log.info("CRL downloaded: {} bytes", crlBytes.length);
+
+            return ResponseEntity.ok()
+                    .header("Content-Disposition", "attachment; filename=\"ca.crl\"")
+                    .header("Cache-Control", "max-age=3600") // Cache 1 sat
+                    .body(crlBytes);
+
+        } catch (Exception e) {
+            log.error("Error generating CRL: ", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(("Error: " + e.getMessage()).getBytes());
+        }
+    }
+
+    /**
+     * Admin pregled CRL sadržaja u JSON formatu
+     */
+    @GetMapping("/crl/info")
+    @PreAuthorize("hasAuthority('ADMIN')")
+    public ResponseEntity<?> getCRLInfo(@RequestParam(required = false) String issuer) {
+        try {
+            List<Certificate> revokedCerts;
+
+            if (issuer != null) {
+                revokedCerts = certificateService.getRevokedCertificatesByIssuer(issuer);
+            } else {
+                revokedCerts = certificateService.getAllRevokedCertificates();
+            }
+
+            return ResponseEntity.ok(Map.of(
+                    "totalRevoked", revokedCerts.size(),
+                    "certificates", revokedCerts.stream()
+                            .map(cert -> Map.of(
+                                    "serialNumber", cert.getSerialNumber(),
+                                    "commonName", cert.getCommonName(),
+                                    "revokedAt", cert.getRevokedAt(),
+                                    "reason", cert.getRevocationReason()
+                            ))
+                            .collect(Collectors.toList())
+            ));
+
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        }
     }
 }

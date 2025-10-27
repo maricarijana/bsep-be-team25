@@ -13,7 +13,19 @@ import org.bouncycastle.asn1.x500.style.BCStyle;
 import org.bouncycastle.pkcs.PKCS10CertificationRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import org.bouncycastle.asn1.pkcs.Attribute;
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
+import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.Extensions;
+import org.bouncycastle.asn1.x509.GeneralName;
+import org.bouncycastle.asn1.x509.GeneralNames;
+import org.bouncycastle.asn1.x500.RDN;
+import java.io.StringReader;
+import java.util.ArrayList;
+import org.bouncycastle.asn1.x500.style.IETFUtils;
+import org.bouncycastle.openssl.PEMParser;
+import java.util.Base64;
+import java.util.HashMap;
 import java.io.StringWriter;
 import java.math.BigInteger;
 import java.security.KeyPair;
@@ -215,85 +227,6 @@ public class CertificateService {
         return certificate;
     }
 
-//    @Transactional
-//    public Certificate createEndEntityCertificate(
-//            User endUser,
-//            String commonName,
-//            String organization,
-//            String country,
-//            int validityYears,
-//            String issuerSerialNumber,
-//            List<String> keyUsage,
-//            List<String> extendedKeyUsage,
-//            List<String> subjectAlternativeNames) throws Exception {
-//
-//        log.info("Creating END ENTITY certificate for: {}", commonName);
-//
-//        Certificate issuerCert = certificateRepository.findBySerialNumber(issuerSerialNumber)
-//                .orElseThrow(() -> new IllegalArgumentException("Issuer certificate not found"));
-//
-//        validationService.validateIssuerBeforeSigning(issuerCert);
-//
-//        validateOrganization(endUser, organization);
-//
-//        LocalDateTime validFrom = LocalDateTime.now();
-//        LocalDateTime validUntil = validFrom.plusYears(validityYears);
-//
-//        if (validUntil.isAfter(issuerCert.getValidUntil())) {
-//            throw new IllegalArgumentException("Certificate validity period exceeds issuer's validity");
-//        }
-//
-//        KeyPair keyPair = certificateGenerator.generateKeyPair();
-//
-//        Subject subject = new Subject();
-//        subject.setCommonName(commonName);
-//        subject.setOrganization(organization);
-//        subject.setCountry(country);
-//        subject.setPublicKey(keyPair.getPublic());
-//
-//        PrivateKey issuerPrivateKey = keystoreService.loadPrivateKey(issuerSerialNumber, issuerCert.getOwner());
-//        X500Name issuerX500Name = buildX500Name(issuerCert);
-//        Issuer issuer = new Issuer(issuerPrivateKey, issuerX500Name);
-//
-//        String serialNumber = generateSerialNumber();
-//
-//        X509Certificate x509Cert = certificateGenerator.generateCertificate(
-//                subject,
-//                issuer,
-//                validFrom,
-//                validUntil,
-//                serialNumber,
-//                false, // not CA
-//                null,
-//                keyUsage,
-//                extendedKeyUsage,
-//                subjectAlternativeNames
-//        );
-//
-//        String pemCert = x509ToPem(x509Cert);
-//        String publicKeyPem = publicKeyToPem(keyPair.getPublic());
-//
-//        Certificate certificate = Certificate.builder()
-//                .serialNumber(serialNumber)
-//                .commonName(commonName)
-//                .organization(organization)
-//                .country(country)
-//                .validFrom(validFrom)
-//                .validUntil(validUntil)
-//                .certificateType(CertificateType.END_ENTITY)
-//                .isCA(false)
-//                .pemCertificate(pemCert)
-//                .publicKeyPem(publicKeyPem)
-//                .issuerCertificate(issuerCert)
-//                .owner(endUser)
-//                .build();
-//
-//        certificate = certificateRepository.save(certificate);
-//
-//        // Za EE sertifikat NE čuvamo privatni ključ na serveru!
-//        log.info("END ENTITY certificate created with serial: {}", serialNumber);
-//        return certificate;
-//    }
 
     private String generateSerialNumber() {
         SecureRandom random = new SecureRandom();
@@ -647,5 +580,118 @@ public class CertificateService {
         log.warn("Private key was NOT provided and remains with the user locally!");
 
         return certificate;
+    }
+
+    public Certificate getCertificateBySerialNumber(String serialNumber) {
+        return certificateRepository.findBySerialNumber(serialNumber)
+                .orElseThrow(() -> new RuntimeException("Certificate not found: " + serialNumber));
+    }
+
+    public List<Certificate> getAllRevokedCertificates() {
+        return certificateRepository.findByIsRevokedTrue();
+    }
+
+    public List<Certificate> getRevokedCertificatesByIssuer(String issuerSerial) {
+        return certificateRepository.findRevokedByIssuer(issuerSerial);
+    }
+
+    /**
+     * Parsira CSR i izvlači CN, SAN i druge podatke
+     */
+    public Map<String, Object> parseCSR(String csrPem) {
+        try {
+            // Očisti PEM format
+            String cleanPem = csrPem
+                    .replace("-----BEGIN CERTIFICATE REQUEST-----", "")
+                    .replace("-----END CERTIFICATE REQUEST-----", "")
+                    .replace("-----BEGIN NEW CERTIFICATE REQUEST-----", "")
+                    .replace("-----END NEW CERTIFICATE REQUEST-----", "")
+                    .replaceAll("\\s", "");
+
+            byte[] csrBytes = Base64.getDecoder().decode(cleanPem);
+
+            // ✅ Koristi direktno BouncyCastle PKCS10CertificationRequest
+            PKCS10CertificationRequest csr = new PKCS10CertificationRequest(csrBytes);
+
+            X500Name subject = csr.getSubject();
+
+            // Izvuci CN iz subject-a
+            String commonName = extractCNFromX500Name(subject);
+
+            // Izvuci SAN ekstenziju
+            List<String> sans = extractSANsFromCSR(csr);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("commonName", commonName);
+            result.put("subjectAlternativeNames", sans);
+            result.put("subject", subject.toString());
+
+            log.info("Parsed CSR - CN: {}, SANs: {}", commonName, sans);
+            return result;
+
+        } catch (Exception e) {
+            log.error("Error parsing CSR: ", e);
+            throw new IllegalArgumentException("Invalid CSR format: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Helper metoda za izvlačenje CN iz X500Name
+     */
+    private String extractCNFromX500Name(X500Name x500Name) {
+        RDN[] rdns = x500Name.getRDNs(BCStyle.CN);
+        if (rdns.length > 0) {
+            return IETFUtils.valueToString(rdns[0].getFirst().getValue());
+        }
+        throw new IllegalArgumentException("CSR does not contain Common Name (CN)");
+    }
+
+    /**
+     * Helper metoda za izvlačenje SAN ekstenzija iz CSR-a
+     */
+    private List<String> extractSANsFromCSR(PKCS10CertificationRequest csr) {
+        List<String> sans = new ArrayList<>();
+
+        try {
+            Attribute[] attributes = csr.getAttributes();
+
+            for (Attribute attr : attributes) {
+                // Tražimo extensionRequest attribute
+                if (attr.getAttrType().equals(PKCSObjectIdentifiers.pkcs_9_at_extensionRequest)) {
+                    Extensions extensions = Extensions.getInstance(attr.getAttrValues().getObjectAt(0));
+                    Extension sanExtension = extensions.getExtension(Extension.subjectAlternativeName);
+
+                    if (sanExtension != null) {
+                        GeneralNames generalNames = GeneralNames.getInstance(sanExtension.getParsedValue());
+
+                        for (GeneralName generalName : generalNames.getNames()) {
+                            String sanValue = generalName.getName().toString();
+
+                            // Formatiraj prema tipu
+                            switch (generalName.getTagNo()) {
+                                case GeneralName.dNSName:
+                                    sans.add("DNS:" + sanValue);
+                                    break;
+                                case GeneralName.iPAddress:
+                                    sans.add("IP:" + sanValue);
+                                    break;
+                                case GeneralName.rfc822Name:
+                                    sans.add("EMAIL:" + sanValue);
+                                    break;
+                                case GeneralName.uniformResourceIdentifier:
+                                    sans.add("URI:" + sanValue);
+                                    break;
+                                default:
+                                    sans.add(sanValue);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not extract SANs from CSR: {}", e.getMessage());
+        }
+
+        return sans;
     }
 }
