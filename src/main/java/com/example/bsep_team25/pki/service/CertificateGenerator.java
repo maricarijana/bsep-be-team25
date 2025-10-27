@@ -1,5 +1,7 @@
 package com.example.bsep_team25.pki.service;
-
+import org.bouncycastle.asn1.x509.CRLDistPoint;
+import org.bouncycastle.asn1.x509.DistributionPoint;
+import org.bouncycastle.asn1.x509.DistributionPointName;
 import com.example.bsep_team25.pki.domain.Issuer;
 import com.example.bsep_team25.pki.domain.Subject;
 import lombok.extern.slf4j.Slf4j;
@@ -129,6 +131,22 @@ public class CertificateGenerator {
 
             certBuilder.addExtension(Extension.subjectAlternativeName, false, new GeneralNames(altNames));
         }
+        String crlUrl = "http://localhost:8080/api/pki/certificates/crl";
+        DistributionPointName distPointName = new DistributionPointName(
+                new GeneralNames(
+                        new GeneralName(GeneralName.uniformResourceIdentifier, crlUrl)
+                )
+        );
+        DistributionPoint[] distPoints = new DistributionPoint[]{
+                new DistributionPoint(distPointName, null, null)
+        };
+        certBuilder.addExtension(
+                Extension.cRLDistributionPoints,
+                false,
+                new CRLDistPoint(distPoints)
+        );
+
+        log.info("Added CRL Distribution Point: {}", crlUrl);
 
         X509CertificateHolder certHolder = certBuilder.build(signer);
 

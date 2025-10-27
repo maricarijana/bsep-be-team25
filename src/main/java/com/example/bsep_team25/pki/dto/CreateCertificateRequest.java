@@ -31,4 +31,5 @@ public class CreateCertificateRequest {
     private List<String> subjectAlternativeNames; // ["DNS:example.com", "IP:192.168.1.1"]
 
     private Long ownerId;
+    private String templateName;
 }

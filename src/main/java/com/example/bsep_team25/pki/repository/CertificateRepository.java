@@ -37,4 +37,11 @@ public interface CertificateRepository extends JpaRepository<Certificate, Long> 
      * Pronalazi sve sertifikate izdane od strane određenog CA-a
      */
     List<Certificate> findByIssuerCertificateId(Long issuerCertificateId);
+
+    // Pronađi sve povučene sertifikate
+    List<Certificate> findByIsRevokedTrue();
+
+    // Pronađi sve povučene sertifikate izdane od strane određenog CA-a
+    @Query("SELECT c FROM Certificate c WHERE c.isRevoked = true AND c.issuerCertificate.serialNumber = :issuerSerial")
+    List<Certificate> findRevokedByIssuer(@Param("issuerSerial") String issuerSerial);
 }
