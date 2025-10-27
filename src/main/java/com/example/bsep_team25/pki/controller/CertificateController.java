@@ -272,4 +272,26 @@ public class CertificateController {
 
         return builder.build();
     }
+
+    /**
+     * Vraća javni ključ korisnika (za password manager deljenje)
+     * GET /api/certificates/users/{userId}/public-key
+     */
+    @GetMapping("/users/{userId}/public-key")
+    public ResponseEntity<Map<String, String>> getUserPublicKey(
+            @PathVariable Long userId) {
+
+        String publicKeyPem = certificateService.getUserPublicKeyPem(userId);
+
+        return ResponseEntity.ok(Map.of(
+                "userId", userId.toString(),
+                "publicKeyPem", publicKeyPem
+        ));
+    }
+    @GetMapping("/users/{userId}/end-entity-certificate")
+    public ResponseEntity<CertificateResponse> getUserEndEntityCertificate(@PathVariable Long userId) {
+        Certificate cert = certificateService.getUserEndEntityCertificate(userId);
+        return ResponseEntity.ok(mapToResponse(cert));  // ← Koristi postojeću metodu!
+    }
+
 }

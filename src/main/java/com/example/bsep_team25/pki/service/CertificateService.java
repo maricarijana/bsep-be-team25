@@ -648,4 +648,29 @@ public class CertificateService {
 
         return certificate;
     }
+
+    /**
+     * Vraća javni ključ EE korisnika u PEM formatu (za password manager enkripciju)
+     */
+    public String getUserPublicKeyPem(Long userId) {
+        log.info("Fetching public key for user ID: {}", userId);
+
+        // Pronađi aktivni END_ENTITY sertifikat korisnika
+        Certificate cert = certificateRepository
+                .findActiveEndEntityCertificateByOwner(userId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "User does not have an active END_ENTITY certificate. " +
+                                "Password manager requires EE certificate with public key."
+                ));
+
+        // Vrati već sačuvani publicKeyPem
+        return cert.getPublicKeyPem();
+    }
+    public Certificate getUserEndEntityCertificate(Long userId) {
+        return certificateRepository.findActiveEndEntityCertificateByOwner(userId)
+                .orElseThrow(() -> new RuntimeException("User doesn't have an active END_ENTITY certificate"));
+    }
+
+
+
 }
