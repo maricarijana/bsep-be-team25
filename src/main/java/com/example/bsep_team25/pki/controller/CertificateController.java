@@ -95,8 +95,6 @@ public class CertificateController {
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         }
     }
-
-
     /**
      * Kreiranje END ENTITY sertifikata iz upload-ovanog CSR-a
      * SA OPCIONALNOM PODRŠKOM ZA ŠABLONE
@@ -154,6 +152,7 @@ public class CertificateController {
             return ResponseEntity.badRequest().body(Map.of("error", "Failed to create certificate: " + e.getMessage()));
         }
     }
+
     /**
      * Admin vidi sve sertifikate
      */
@@ -371,4 +370,26 @@ public class CertificateController {
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         }
     }
+
+    /**
+     * Vraća javni ključ korisnika (za password manager deljenje)
+     * GET /api/certificates/users/{userId}/public-key
+     */
+    @GetMapping("/users/{userId}/public-key")
+    public ResponseEntity<Map<String, String>> getUserPublicKey(
+            @PathVariable Long userId) {
+
+        String publicKeyPem = certificateService.getUserPublicKeyPem(userId);
+
+        return ResponseEntity.ok(Map.of(
+                "userId", userId.toString(),
+                "publicKeyPem", publicKeyPem
+        ));
+    }
+    @GetMapping("/users/{userId}/end-entity-certificate")
+    public ResponseEntity<CertificateResponse> getUserEndEntityCertificate(@PathVariable Long userId) {
+        Certificate cert = certificateService.getUserEndEntityCertificate(userId);
+        return ResponseEntity.ok(mapToResponse(cert));  // ← Koristi postojeću metodu!
+    }
+
 }

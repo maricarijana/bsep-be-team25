@@ -44,4 +44,18 @@ public interface CertificateRepository extends JpaRepository<Certificate, Long> 
     // Pronađi sve povučene sertifikate izdane od strane određenog CA-a
     @Query("SELECT c FROM Certificate c WHERE c.isRevoked = true AND c.issuerCertificate.serialNumber = :issuerSerial")
     List<Certificate> findRevokedByIssuer(@Param("issuerSerial") String issuerSerial);
+
+    /**
+     * Pronalazi aktivni END_ENTITY sertifikat korisnika
+     */
+    @Query("""
+    SELECT c FROM Certificate c
+    WHERE c.owner.id = :ownerId
+      AND c.certificateType = com.example.bsep_team25.pki.domain.CertificateType.END_ENTITY
+      AND c.isRevoked = false
+      AND c.validFrom <= CURRENT_TIMESTAMP
+      AND c.validUntil > CURRENT_TIMESTAMP
+    ORDER BY c.createdAt DESC
+    """)
+    Optional<Certificate> findActiveEndEntityCertificateByOwner(@Param("ownerId") Long ownerId);
 }

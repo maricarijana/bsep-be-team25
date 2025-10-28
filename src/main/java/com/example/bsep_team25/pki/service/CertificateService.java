@@ -227,6 +227,85 @@ public class CertificateService {
         return certificate;
     }
 
+//    @Transactional
+//    public Certificate createEndEntityCertificate(
+//            User endUser,
+//            String commonName,
+//            String organization,
+//            String country,
+//            int validityYears,
+//            String issuerSerialNumber,
+//            List<String> keyUsage,
+//            List<String> extendedKeyUsage,
+//            List<String> subjectAlternativeNames) throws Exception {
+//
+//        log.info("Creating END ENTITY certificate for: {}", commonName);
+//
+//        Certificate issuerCert = certificateRepository.findBySerialNumber(issuerSerialNumber)
+//                .orElseThrow(() -> new IllegalArgumentException("Issuer certificate not found"));
+//
+//        validationService.validateIssuerBeforeSigning(issuerCert);
+//
+//        validateOrganization(endUser, organization);
+//
+//        LocalDateTime validFrom = LocalDateTime.now();
+//        LocalDateTime validUntil = validFrom.plusYears(validityYears);
+//
+//        if (validUntil.isAfter(issuerCert.getValidUntil())) {
+//            throw new IllegalArgumentException("Certificate validity period exceeds issuer's validity");
+//        }
+//
+//        KeyPair keyPair = certificateGenerator.generateKeyPair();
+//
+//        Subject subject = new Subject();
+//        subject.setCommonName(commonName);
+//        subject.setOrganization(organization);
+//        subject.setCountry(country);
+//        subject.setPublicKey(keyPair.getPublic());
+//
+//        PrivateKey issuerPrivateKey = keystoreService.loadPrivateKey(issuerSerialNumber, issuerCert.getOwner());
+//        X500Name issuerX500Name = buildX500Name(issuerCert);
+//        Issuer issuer = new Issuer(issuerPrivateKey, issuerX500Name);
+//
+//        String serialNumber = generateSerialNumber();
+//
+//        X509Certificate x509Cert = certificateGenerator.generateCertificate(
+//                subject,
+//                issuer,
+//                validFrom,
+//                validUntil,
+//                serialNumber,
+//                false, // not CA
+//                null,
+//                keyUsage,
+//                extendedKeyUsage,
+//                subjectAlternativeNames
+//        );
+//
+//        String pemCert = x509ToPem(x509Cert);
+//        String publicKeyPem = publicKeyToPem(keyPair.getPublic());
+//
+//        Certificate certificate = Certificate.builder()
+//                .serialNumber(serialNumber)
+//                .commonName(commonName)
+//                .organization(organization)
+//                .country(country)
+//                .validFrom(validFrom)
+//                .validUntil(validUntil)
+//                .certificateType(CertificateType.END_ENTITY)
+//                .isCA(false)
+//                .pemCertificate(pemCert)
+//                .publicKeyPem(publicKeyPem)
+//                .issuerCertificate(issuerCert)
+//                .owner(endUser)
+//                .build();
+//
+//        certificate = certificateRepository.save(certificate);
+//
+//        // Za EE sertifikat NE čuvamo privatni ključ na serveru!
+//        log.info("END ENTITY certificate created with serial: {}", serialNumber);
+//        return certificate;
+//    }
 
     private String generateSerialNumber() {
         SecureRandom random = new SecureRandom();
@@ -694,4 +773,29 @@ public class CertificateService {
 
         return sans;
     }
+
+    /**
+     * Vraća javni ključ EE korisnika u PEM formatu (za password manager enkripciju)
+     */
+    public String getUserPublicKeyPem(Long userId) {
+        log.info("Fetching public key for user ID: {}", userId);
+
+        // Pronađi aktivni END_ENTITY sertifikat korisnika
+        Certificate cert = certificateRepository
+                .findActiveEndEntityCertificateByOwner(userId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "User does not have an active END_ENTITY certificate. " +
+                                "Password manager requires EE certificate with public key."
+                ));
+
+        // Vrati već sačuvani publicKeyPem
+        return cert.getPublicKeyPem();
+    }
+    public Certificate getUserEndEntityCertificate(Long userId) {
+        return certificateRepository.findActiveEndEntityCertificateByOwner(userId)
+                .orElseThrow(() -> new RuntimeException("User doesn't have an active END_ENTITY certificate"));
+    }
+
+
+
 }

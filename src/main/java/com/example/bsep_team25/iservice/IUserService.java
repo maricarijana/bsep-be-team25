@@ -1,5 +1,6 @@
 package com.example.bsep_team25.iservice;
 
+import com.example.bsep_team25.dto.UserResponseDTO;
 import com.example.bsep_team25.model.Role;
 import com.example.bsep_team25.model.User;
 
@@ -16,4 +17,5 @@ public interface IUserService {
     void deleteById(Long id);
     List<User> findByRole(Role role);
     Optional<User> findFirstByRole(Role role);
+    List<UserResponseDTO> getUsersWithEndEntityCertificates();
 }
